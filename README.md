@@ -100,6 +100,43 @@ grep -E '^ADMIN_(ACCOUNT|PASSWORD)=' docker/.env
 PUBLIC_HOST=192.168.1.10 ./docker/install.sh
 ```
 
+### 公网地址与 LiveKit 地址
+
+`PUBLIC_HOST` 是客户端能够访问到的服务器地址，配置保存在 `docker/.env`。该值只填写 IP 或域名，不包含 `http://`、`ws://` 或端口。
+
+```dotenv
+PUBLIC_HOST=47.93.100.194
+```
+
+Docker Compose 会根据它自动生成两个用途不同的 LiveKit 地址：
+
+| 配置 | 默认值 | 用途 |
+| --- | --- | --- |
+| `LIVEKIT_URL` | `ws://${PUBLIC_HOST}:7880` | 后端返回给 macOS 等外部客户端的媒体服务地址 |
+| `LIVEKIT_INTERNAL_URL` | `ws://livekit:7880` | 后端容器访问 LiveKit 容器的内部控制地址 |
+
+外部客户端不能使用 Docker、VPC 或局域网内网地址，例如 `172.17.x.x`、`10.x.x.x` 或 `192.168.x.x`。云服务器应将 `PUBLIC_HOST` 设置为公网 IP 或可公网解析的域名。
+
+安装脚本只在首次运行时创建 `docker/.env`。如果文件已经存在，请直接修改它，然后重建 LiveKit 和后端，使地址生效：
+
+```bash
+sed -i 's/^PUBLIC_HOST=.*/PUBLIC_HOST=你的公网IP或域名/' docker/.env
+
+docker compose --env-file docker/.env -f docker/compose.yml \
+  up -d --force-recreate livekit backend
+```
+
+可以通过以下命令确认容器实际加载的地址：
+
+```bash
+grep '^PUBLIC_HOST=' docker/.env
+
+docker compose --env-file docker/.env -f docker/compose.yml \
+  exec backend printenv LIVEKIT_URL
+```
+
+macOS 客户端中的“服务端地址”是后端 API 地址，例如 `http://47.93.100.194:8080`；加入会议后，客户端会从后端响应中自动取得 `LIVEKIT_URL`，无需在客户端单独填写 LiveKit 地址。
+
 完整的配置、升级、日志和数据清理说明见 [Docker 部署文档](docker/README.md)。
 
 ## 运行 macOS 客户端
