@@ -35,8 +35,6 @@
         <!-- Development deployments may use a raw IP over HTTP/WS. -->
         <key>NSAllowsArbitraryLoads</key>
         <true/>
-        <key>NSAllowsLocalNetworking</key>
-        <true/>
     </dict>
 </dict>
 </plist>
