@@ -2,6 +2,60 @@
 
 支持 Linux 和 macOS。需要 Docker Engine 24+ 或 Docker Desktop，以及 Docker Compose 插件。
 
+## 在 RHEL 系 Linux 安装 Docker
+
+以下命令适用于 Alibaba Cloud Linux、CentOS Stream、Rocky Linux、AlmaLinux 等使用 `dnf` 的发行版。Ubuntu 和 Debian 请使用对应发行版的 Docker 官方安装方式。
+
+```bash
+dnf install -y dnf-plugins-core
+
+dnf config-manager --add-repo \
+  https://download.docker.com/linux/centos/docker-ce.repo
+
+sed -i \
+  's#https://download.docker.com#https://mirrors.aliyun.com/docker-ce#g' \
+  /etc/yum.repos.d/docker-ce.repo
+
+dnf clean all
+dnf makecache --refresh
+
+dnf install -y \
+  docker-ce \
+  docker-ce-cli \
+  containerd.io \
+  docker-buildx-plugin \
+  docker-compose-plugin
+
+systemctl enable --now docker
+```
+
+如果从 Docker Hub 拉取基础镜像较慢，可以配置镜像加速。仅当 `/etc/docker/daemon.json` 不存在时，直接执行：
+
+```bash
+install -d -m 0755 /etc/docker
+
+tee /etc/docker/daemon.json >/dev/null <<'EOF'
+{
+  "registry-mirrors": [
+    "https://docker.1panel.live/"
+  ]
+}
+EOF
+
+systemctl daemon-reload
+systemctl restart docker
+```
+
+如果 `/etc/docker/daemon.json` 已经存在，请保留原有配置，只向现有 JSON 对象中合并 `registry-mirrors` 字段，不要直接覆盖文件。配置完成后验证：
+
+```bash
+docker version
+docker compose version
+docker info | sed -n '/Registry Mirrors/,+3p'
+```
+
+镜像加速地址属于第三方服务，可能失效或调整访问策略；出现拉取异常时，请更换为当前可用且可信的镜像源，或恢复使用 Docker Hub。
+
 ## 一键安装全部服务
 
 ```bash
