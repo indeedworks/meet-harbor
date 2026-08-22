@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>zh_CN</string>
+    <key>CFBundleExecutable</key>
+    <string>RemoteMeetingMac</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.zthz.RemoteMeetingMac</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>MeetHarbor</string>
+    <key>CFBundleDisplayName</key>
+    <string>MeetHarbor</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.2</string>
+    <key>CFBundleVersion</key>
+    <string>3</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>用于在会议中采集并发送你的麦克风音频。</string>
+    <key>NSScreenCaptureDescription</key>
+    <string>用于在会议中共享你的屏幕。</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>用于连接局域网内的会议和媒体服务。</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <!-- Development deployments may use a raw IP over HTTP/WS. -->
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+</dict>
+</plist>

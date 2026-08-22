@@ -45,6 +45,10 @@ Build a local unsigned app bundle:
 
 ```bash
 cd sources/macos-client
-bash scripts/package-app.sh
+bash package-app.sh
 open dist/RemoteMeetingMac.app
 ```
+
+Development deployments may use a raw IP over HTTP/WS, so the bundled
+`Info.plist` temporarily permits insecure transport. Production deployments
+should use HTTPS/WSS and remove `NSAllowsArbitraryLoads`.
