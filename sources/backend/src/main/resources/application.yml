@@ -1,0 +1,60 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: remote-meeting-backend
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/remote_meeting}
+    username: ${SPRING_DATASOURCE_USERNAME:remote_meeting}
+    password: ${SPRING_DATASOURCE_PASSWORD:change-me-postgres-password}
+    driver-class-name: org.postgresql.Driver
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:change-me-redis-password}
+      repositories:
+        enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: Asia/Shanghai
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+app:
+  public-base-url: ${PUBLIC_BASE_URL:http://localhost:8080}
+  security:
+    cors-allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:*,http://127.0.0.1:*}
+    jwt-secret: ${JWT_SECRET:change-me-jwt-secret-at-least-32-characters}
+    access-token-ttl-minutes: ${ACCESS_TOKEN_TTL_MINUTES:120}
+  livekit:
+    url: ${LIVEKIT_URL:ws://localhost:7880}
+    internal-url: ${LIVEKIT_INTERNAL_URL:${LIVEKIT_URL:ws://localhost:7880}}
+    api-key: ${LIVEKIT_API_KEY:devkey}
+    api-secret: ${LIVEKIT_API_SECRET:change-me-livekit-secret-at-least-32-characters}
+    room-empty-timeout-seconds: ${LIVEKIT_ROOM_EMPTY_TIMEOUT_SECONDS:300}
+    room-departure-timeout-seconds: ${LIVEKIT_ROOM_DEPARTURE_TIMEOUT_SECONDS:20}
+  recording:
+    storage-path: ${RECORDING_STORAGE_PATH:/data/recordings}
+  bootstrap:
+    admin-enabled: ${ADMIN_BOOTSTRAP_ENABLED:false}
+    admin-account: ${ADMIN_ACCOUNT:admin}
+    admin-password: ${ADMIN_PASSWORD:}
+    demo-data-enabled: ${DEMO_DATA_ENABLED:false}

@@ -1,0 +1,47 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# OS and editor files
+.DS_Store
+**/.DS_Store
+.idea/
+**/.idea/
+*.iml
+
+# Local runtime and agent metadata
+.runtime/
+.codex/
+.aoci/
+AGENTS.md
+aoci.txt
+aoci.meta.txt
+aoci.code.txt
+
+# Superseded local deployment directory
+deploy/
+scripts/
+
+# Java / Maven
+**/target/
+*.log
+
+# Node / Vue
+**/node_modules/
+sources/admin-web/dist/
+*.tsbuildinfo
+
+# Swift / Xcode and packaged applications
+sources/macos-client/.build/
+sources/macos-client/.swiftpm/
+sources/macos-client/dist/
+**/xcuserdata/
+*.dmg
+
+# Local deployment data and backups
+docker/data/
+docker/backups/
