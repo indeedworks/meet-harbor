@@ -21,7 +21,3 @@
 - 根目录的 `.gitignore`、`.gitattributes`、`README.md`，以及你选定的 `LICENSE`
 
 不要提交旧版 `deploy/`、`scripts/`，以及 `.env`、`.runtime/`、`.aoci/`、`.codex/`、`node_modules/`、`target/`、`.build/`、`dist/`、DMG/App 构建产物、日志或 `.DS_Store`。根目录 `.gitignore` 已覆盖这些内容。
-
-## 发布前检查
-
-项目当前尚未包含开源许可证。正式公开前请选定并添加 `LICENSE`（例如 MIT、Apache-2.0 或 GPL-3.0），同时确认名称、Logo、字体、图片及第三方素材拥有可再分发权限。
