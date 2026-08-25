@@ -119,7 +119,7 @@ Docker Compose 会根据它自动生成两个用途不同的 LiveKit 地址：
 
 安装脚本只在首次运行时创建 `docker/.env`。如果文件已经存在，请直接修改它，然后重建 LiveKit 和后端，使地址生效：
 
-也可以使用一键脚本。它支持公网 IP、域名以及带协议的完整地址，并会同步更新后端邀请链接和 LiveKit 公网地址：
+也可以使用一键脚本。它支持公网 IP、域名以及带协议的完整地址，会同步更新后端邀请链接和 LiveKit 公网地址，并重建管理端以刷新 Nginx 的后端地址解析：
 
 ```bash
 ./docker/update-public-host.sh 47.93.100.194
@@ -141,7 +141,7 @@ Docker Compose 会根据它自动生成两个用途不同的 LiveKit 地址：
 sed -i 's/^PUBLIC_HOST=.*/PUBLIC_HOST=你的公网IP或域名/' docker/.env
 
 docker compose --env-file docker/.env -f docker/compose.yml \
-  up -d --force-recreate livekit backend
+  up -d --force-recreate livekit backend admin-web
 ```
 
 可以通过以下命令确认容器实际加载的地址：

@@ -105,7 +105,7 @@ docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config >/dev/null
 
 echo "正在应用新的公网入口地址……"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" \
-  up -d --force-recreate livekit backend
+  up -d --force-recreate livekit backend admin-web
 
 backend_port=$(sed -n 's/^BACKEND_PORT=//p' "$ENV_FILE" | tail -n 1)
 livekit_port=$(sed -n 's/^LIVEKIT_HTTP_PORT=//p' "$ENV_FILE" | tail -n 1)
