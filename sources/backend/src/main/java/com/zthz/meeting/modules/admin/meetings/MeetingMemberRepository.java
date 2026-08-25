@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 public interface MeetingMemberRepository extends JpaRepository<MeetingMemberEntity, Long> {
+    boolean existsByMeetingIdAndUserAccount(Long meetingId, String account);
     int countByMeetingId(Long meetingId);
 
     Optional<MeetingMemberEntity> findByMeetingIdAndUserId(Long meetingId, Long userId);

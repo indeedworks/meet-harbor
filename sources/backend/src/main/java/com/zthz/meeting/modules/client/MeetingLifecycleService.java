@@ -5,6 +5,7 @@ import com.zthz.meeting.modules.admin.meetings.MeetingRepository;
 import com.zthz.meeting.modules.admin.meetings.MeetingSessionEntity;
 import com.zthz.meeting.modules.admin.meetings.MeetingSessionRepository;
 import com.zthz.meeting.modules.livekit.LiveKitRoomService;
+import com.zthz.meeting.modules.livekit.LiveKitEgressService;
 import java.time.OffsetDateTime;
 import java.time.Instant;
 import java.util.Map;
@@ -20,16 +21,19 @@ public class MeetingLifecycleService {
     private final MeetingRepository meetingRepository;
     private final MeetingSessionRepository meetingSessionRepository;
     private final LiveKitRoomService liveKitRoomService;
+    private final LiveKitEgressService liveKitEgressService;
     private final Map<String, Instant> reconnectingParticipants = new ConcurrentHashMap<>();
 
     public MeetingLifecycleService(
             MeetingRepository meetingRepository,
             MeetingSessionRepository meetingSessionRepository,
-            LiveKitRoomService liveKitRoomService
+            LiveKitRoomService liveKitRoomService,
+            LiveKitEgressService liveKitEgressService
     ) {
         this.meetingRepository = meetingRepository;
         this.meetingSessionRepository = meetingSessionRepository;
         this.liveKitRoomService = liveKitRoomService;
+        this.liveKitEgressService = liveKitEgressService;
     }
 
     @Transactional
@@ -85,6 +89,7 @@ public class MeetingLifecycleService {
         meeting.setEndedAt(finishAt);
         meeting.setUpdatedAt(OffsetDateTime.now());
         meetingRepository.save(meeting);
+        liveKitEgressService.stopIfActive(meeting);
         liveKitRoomService.deleteRoom(liveKitRoomName(meeting));
     }
 

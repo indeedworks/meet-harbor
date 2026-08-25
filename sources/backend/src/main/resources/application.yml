@@ -53,6 +53,8 @@ app:
     room-departure-timeout-seconds: ${LIVEKIT_ROOM_DEPARTURE_TIMEOUT_SECONDS:20}
   recording:
     storage-path: ${RECORDING_STORAGE_PATH:/data/recordings}
+    auto-enabled: ${RECORDING_AUTO_ENABLED:true}
+    retention-days: ${RECORDING_RETENTION_DAYS:7}
   bootstrap:
     admin-enabled: ${ADMIN_BOOTSTRAP_ENABLED:false}
     admin-account: ${ADMIN_ACCOUNT:admin}

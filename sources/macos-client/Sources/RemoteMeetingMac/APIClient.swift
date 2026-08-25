@@ -157,6 +157,18 @@ final class APIClient {
         try await request(path: "/api/client/recordings")
     }
 
+    func downloadRecording(id: Int) async throws -> Data {
+        guard let baseURL = URL(string: baseURLString) else { throw APIError.invalidBaseURL }
+        var request = URLRequest(url: baseURL.appendingPathComponent("/api/client/recordings/\(id)/download"))
+        guard let accessToken else { throw APIError.unauthorized }
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        if httpResponse.statusCode == 401 { throw APIError.unauthorized }
+        guard (200..<300).contains(httpResponse.statusCode) else { throw APIError.serverMessage("下载录制失败") }
+        return data
+    }
+
     private func request<T: Decodable, B: Encodable>(
         path: String,
         method: String = "GET",

@@ -19,6 +19,7 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
     private var room: Room?
     private var remoteScreenSharePollingTask: Task<Void, Never>?
     private var remoteScreenSharePublicationSid: Track.Sid?
+    private var highQualityScreenShareSids: Set<Track.Sid> = []
     private var isStoppingLocalScreenShare = false
     private let logger = Logger(subsystem: "com.zthz.RemoteMeetingMac", category: "LiveKit")
 
@@ -42,7 +43,7 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
                         showCursor: true
                     ),
                     defaultVideoPublishOptions: VideoPublishOptions(
-                        screenShareEncoding: VideoEncoding(maxBitrate: 2_500_000, maxFps: 15),
+                        screenShareEncoding: VideoEncoding(maxBitrate: 5_000_000, maxFps: 15),
                         simulcast: true,
                         screenShareSimulcastLayers: [
                             .presetScreenShareH360FPS3,
@@ -94,6 +95,7 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
         remoteScreenShareTrack = nil
         remoteScreenShareOwner = nil
         remoteScreenSharePublicationSid = nil
+        highQualityScreenShareSids.removeAll()
     }
 
     func setMicrophoneMuted(_ muted: Bool) async throws {
@@ -178,6 +180,7 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
         }
         Task { @MainActor in
             self.logger.info("Remote screen share subscribed from \(participantDisplayName(participant), privacy: .public)")
+            await self.preferHighQuality(for: publication)
             self.updateRemoteScreenShare(from: room, preferredParticipant: participant)
         }
     }
@@ -253,6 +256,7 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
             remoteScreenShareTrack = screenShare.track
             remoteScreenShareOwner = participantDisplayName(participant)
             remoteScreenSharePublicationSid = screenShare.sid
+            requestHighQualityIfNeeded(for: screenShare.publication)
             return
         }
 
@@ -261,6 +265,7 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
                 remoteScreenShareTrack = screenShare.track
                 remoteScreenShareOwner = participantDisplayName(participant)
                 remoteScreenSharePublicationSid = screenShare.sid
+                requestHighQualityIfNeeded(for: screenShare.publication)
                 return
             }
         }
@@ -270,13 +275,16 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
         remoteScreenSharePublicationSid = nil
     }
 
-    private func screenShareVideoTrack(for participant: RemoteParticipant) -> (track: VideoTrack, sid: Track.Sid)? {
+    private func screenShareVideoTrack(
+        for participant: RemoteParticipant
+    ) -> (track: VideoTrack, sid: Track.Sid, publication: RemoteTrackPublication)? {
         for publication in participant.videoTracks where publication.source == .screenShareVideo {
             guard !publication.isMuted else {
                 continue
             }
-            if let track = publication.track as? VideoTrack {
-                return (track, publication.sid)
+            if let track = publication.track as? VideoTrack,
+               let remotePublication = publication as? RemoteTrackPublication {
+                return (track, publication.sid, remotePublication)
             }
         }
         return nil
@@ -293,7 +301,26 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
             remoteScreenShareOwner = nil
             remoteScreenSharePublicationSid = nil
         }
+        highQualityScreenShareSids.remove(publication.sid)
         updateRemoteScreenShare(from: room)
+    }
+
+    private func requestHighQualityIfNeeded(for publication: RemoteTrackPublication) {
+        guard highQualityScreenShareSids.insert(publication.sid).inserted else {
+            return
+        }
+        Task { @MainActor in
+            await preferHighQuality(for: publication)
+        }
+    }
+
+    private func preferHighQuality(for publication: RemoteTrackPublication) async {
+        do {
+            try await publication.set(videoQuality: .high)
+        } catch {
+            highQualityScreenShareSids.remove(publication.sid)
+            logger.warning("Failed to request high-quality screen share: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private func startRemoteScreenSharePolling() {

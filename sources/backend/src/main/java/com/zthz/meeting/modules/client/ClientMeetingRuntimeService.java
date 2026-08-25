@@ -26,6 +26,21 @@ public class ClientMeetingRuntimeService {
         return runtimeStates.computeIfAbsent(meetingNo, MeetingRuntimeState::new);
     }
 
+    public void participantJoined(String account, String nickname, String meetingNo) {
+        MeetingRuntimeState state = getRuntime(meetingNo);
+        state.participant(account, nickname);
+        state.updatedAt = OffsetDateTime.now();
+    }
+
+    public void participantLeft(String account, String meetingNo) {
+        MeetingRuntimeState state = runtimeStates.get(meetingNo);
+        if (state == null) {
+            return;
+        }
+        state.participants.remove(account);
+        state.updatedAt = OffsetDateTime.now();
+    }
+
     public MeetingRuntimeState updateMute(String account, String meetingNo, MuteStateRequest request) {
         UserEntity user = userService.requireEnabledUserByAccount(account);
         MeetingRuntimeState state = getRuntime(meetingNo);

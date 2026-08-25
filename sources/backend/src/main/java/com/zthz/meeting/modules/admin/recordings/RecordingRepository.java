@@ -11,6 +11,10 @@ public interface RecordingRepository extends JpaRepository<RecordingEntity, Long
 
     boolean existsByMeetingIdAndStatus(Long meetingId, String status);
 
+    java.util.Optional<RecordingEntity> findByEgressId(String egressId);
+
+    java.util.Optional<RecordingEntity> findFirstByMeetingIdAndStatusInOrderByCreatedAtDesc(Long meetingId, List<String> statuses);
+
     long countByStatus(String status);
 
     long countByExpiredAtBetween(OffsetDateTime start, OffsetDateTime end);

@@ -119,6 +119,24 @@ Docker Compose 会根据它自动生成两个用途不同的 LiveKit 地址：
 
 安装脚本只在首次运行时创建 `docker/.env`。如果文件已经存在，请直接修改它，然后重建 LiveKit 和后端，使地址生效：
 
+也可以使用一键脚本。它支持公网 IP、域名以及带协议的完整地址，并会同步更新后端邀请链接和 LiveKit 公网地址：
+
+```bash
+./docker/update-public-host.sh 47.93.100.194
+./docker/update-public-host.sh meeting.example.com
+./docker/update-public-host.sh https://meeting.example.com
+```
+
+不传参数时，脚本会交互式询问新地址：
+
+```bash
+./docker/update-public-host.sh
+```
+
+输入 `https://` 时脚本会将媒体地址切换为 `wss://`。使用 HTTPS/WSS 前仍需提前配置证书和反向代理。
+
+也可手动修改：
+
 ```bash
 sed -i 's/^PUBLIC_HOST=.*/PUBLIC_HOST=你的公网IP或域名/' docker/.env
 

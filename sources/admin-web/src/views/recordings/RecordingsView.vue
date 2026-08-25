@@ -21,7 +21,7 @@
         </el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" :disabled="row.status !== 'COMPLETED'">下载</el-button>
+            <el-button text type="primary" :disabled="row.status !== 'COMPLETED'" @click="downloadRecording(row)">下载</el-button>
             <el-button text type="danger" @click="deleteRecording(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -35,6 +35,7 @@ import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   deleteRecordingApi,
+  downloadRecordingApi,
   listRecordingsApi,
   type AdminRecording,
 } from '../../api/adminRecordings'
@@ -92,6 +93,16 @@ async function deleteRecording(recording: AdminRecording) {
   await loadRecordings()
 }
 
+async function downloadRecording(recording: AdminRecording) {
+  const blob = await downloadRecordingApi(recording.id)
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = recording.fileName ?? `meeting-${recording.meetingNo}.mp4`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 onMounted(loadRecordings)
 </script>
 
@@ -101,4 +112,3 @@ onMounted(loadRecordings)
   gap: 16px;
 }
 </style>
-

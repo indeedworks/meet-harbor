@@ -2,6 +2,7 @@ package com.zthz.meeting.modules.admin.meetings;
 
 import com.zthz.meeting.modules.admin.recordings.RecordingRepository;
 import com.zthz.meeting.modules.livekit.LiveKitRoomService;
+import com.zthz.meeting.modules.livekit.LiveKitEgressService;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -16,19 +17,22 @@ public class AdminMeetingService {
     private final MeetingSessionRepository meetingSessionRepository;
     private final RecordingRepository recordingRepository;
     private final LiveKitRoomService liveKitRoomService;
+    private final LiveKitEgressService liveKitEgressService;
 
     public AdminMeetingService(
             MeetingRepository meetingRepository,
             MeetingMemberRepository meetingMemberRepository,
             MeetingSessionRepository meetingSessionRepository,
             RecordingRepository recordingRepository,
-            LiveKitRoomService liveKitRoomService
+            LiveKitRoomService liveKitRoomService,
+            LiveKitEgressService liveKitEgressService
     ) {
         this.meetingRepository = meetingRepository;
         this.meetingMemberRepository = meetingMemberRepository;
         this.meetingSessionRepository = meetingSessionRepository;
         this.recordingRepository = recordingRepository;
         this.liveKitRoomService = liveKitRoomService;
+        this.liveKitEgressService = liveKitEgressService;
     }
 
     @Transactional(readOnly = true)
@@ -67,6 +71,7 @@ public class AdminMeetingService {
         meeting.setEndedAt(now);
         meeting.setUpdatedAt(now);
         meetingRepository.save(meeting);
+        liveKitEgressService.stopIfActive(meeting);
         liveKitRoomService.deleteRoom(liveKitRoomName(meeting));
 
         return new ForceStopMeetingResponse(

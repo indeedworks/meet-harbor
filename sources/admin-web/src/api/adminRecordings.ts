@@ -19,3 +19,6 @@ export function deleteRecordingApi(id: number) {
   return http.delete<unknown, ApiResponse<void>>(`/admin/recordings/${id}`)
 }
 
+export function downloadRecordingApi(id: number) {
+  return http.get<unknown, Blob>(`/admin/recordings/${id}/download`, { responseType: 'blob' })
+}

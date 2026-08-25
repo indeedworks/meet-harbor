@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AppKit
 
 @MainActor
 final class AppState: ObservableObject {
@@ -186,6 +187,18 @@ final class AppState: ObservableObject {
         }
     }
 
+    func downloadRecording(_ recording: ClientRecording) async {
+        do {
+            let data = try await apiClient.downloadRecording(id: recording.id)
+            let panel = NSSavePanel()
+            panel.nameFieldStringValue = recording.fileName ?? "meeting-\(recording.meetingNo).mp4"
+            guard panel.runModal() == .OK, let destination = panel.url else { return }
+            try data.write(to: destination, options: .atomic)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func refreshRuntime() async {
         guard let meetingNo = currentMeeting?.meetingNo else { return }
         do {
@@ -206,6 +219,8 @@ final class AppState: ObservableObject {
 
     private func handleSignalingEvent(_ event: SignalingEvent) async {
         switch event.type {
+        case "server.connected", "server.member_joined", "server.member_left":
+            await refreshRuntime()
         case "client.screen_share_started":
             guard event.account != currentUser?.account else {
                 return

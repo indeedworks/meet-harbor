@@ -72,6 +72,30 @@ services:
       - "${LIVEKIT_RTC_UDP_PORT_START:-50000}-${LIVEKIT_RTC_UDP_PORT_END:-50100}:50000-50100/udp"
     networks: [meeting_net]
 
+  livekit-egress:
+    image: livekit/egress:v1.9.0
+    restart: unless-stopped
+    cap_add:
+      - SYS_ADMIN
+    depends_on:
+      redis:
+        condition: service_healthy
+      livekit:
+        condition: service_started
+    environment:
+      EGRESS_CONFIG_BODY: |
+        api_key: ${LIVEKIT_API_KEY}
+        api_secret: ${LIVEKIT_API_SECRET}
+        ws_url: ws://livekit:7880
+        insecure: true
+        log_level: info
+        redis:
+          address: redis:6379
+          password: ${REDIS_PASSWORD}
+    volumes:
+      - recordings_data:/data/recordings
+    networks: [meeting_net]
+
   backend:
     image: ${PROJECT_NAME:-remote-meeting-stack}-backend:local
     build:
@@ -84,6 +108,8 @@ services:
         condition: service_healthy
       livekit:
         condition: service_started
+      livekit-egress:
+        condition: service_started
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
@@ -91,16 +117,19 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
-      LIVEKIT_URL: ws://${PUBLIC_HOST}:${LIVEKIT_HTTP_PORT:-7880}
+      LIVEKIT_URL: ${LIVEKIT_PUBLIC_SCHEME:-ws}://${PUBLIC_HOST}:${LIVEKIT_HTTP_PORT:-7880}
       LIVEKIT_INTERNAL_URL: ws://livekit:7880
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
       JWT_SECRET: ${JWT_SECRET}
+      PUBLIC_BASE_URL: ${PUBLIC_SCHEME:-http}://${PUBLIC_HOST}:${BACKEND_PORT:-8080}
       ADMIN_ACCOUNT: ${ADMIN_ACCOUNT}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       ADMIN_BOOTSTRAP_ENABLED: ${ADMIN_BOOTSTRAP_ENABLED:-true}
       DEMO_DATA_ENABLED: ${DEMO_DATA_ENABLED:-false}
       RECORDING_STORAGE_PATH: /data/recordings
+      RECORDING_AUTO_ENABLED: ${RECORDING_AUTO_ENABLED:-true}
+      RECORDING_RETENTION_DAYS: ${RECORDING_RETENTION_DAYS:-7}
       TZ: Asia/Shanghai
     ports:
       - "${BACKEND_PORT:-8080}:8080"

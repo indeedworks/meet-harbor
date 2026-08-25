@@ -11,6 +11,7 @@ import com.zthz.meeting.modules.admin.recordings.RecordingRepository;
 import com.zthz.meeting.modules.admin.users.UserEntity;
 import com.zthz.meeting.modules.admin.users.UserService;
 import com.zthz.meeting.modules.livekit.LiveKitRoomService;
+import com.zthz.meeting.modules.livekit.LiveKitEgressService;
 import com.zthz.meeting.modules.livekit.LiveKitTokenService;
 import com.zthz.meeting.modules.livekit.LiveKitTokenService.LiveKitConnection;
 import jakarta.servlet.http.HttpServletRequest;
@@ -36,6 +37,7 @@ public class ClientMeetingService {
     private final UserService userService;
     private final LiveKitRoomService liveKitRoomService;
     private final LiveKitTokenService liveKitTokenService;
+    private final LiveKitEgressService liveKitEgressService;
     private final String publicBaseUrl;
     private final SecureRandom secureRandom = new SecureRandom();
 
@@ -47,6 +49,7 @@ public class ClientMeetingService {
             UserService userService,
             LiveKitRoomService liveKitRoomService,
             LiveKitTokenService liveKitTokenService,
+            LiveKitEgressService liveKitEgressService,
             @Value("${app.public-base-url:http://localhost:8080}") String publicBaseUrl
     ) {
         this.meetingRepository = meetingRepository;
@@ -56,6 +59,7 @@ public class ClientMeetingService {
         this.userService = userService;
         this.liveKitRoomService = liveKitRoomService;
         this.liveKitTokenService = liveKitTokenService;
+        this.liveKitEgressService = liveKitEgressService;
         this.publicBaseUrl = publicBaseUrl;
     }
 
@@ -126,6 +130,7 @@ public class ClientMeetingService {
         session.setUserAgent(httpRequest.getHeader("User-Agent"));
         session.setCreatedAt(OffsetDateTime.now());
         meetingSessionRepository.save(session);
+        liveKitEgressService.startIfNeeded(meeting);
 
         LiveKitConnection liveKit = liveKitTokenService.createParticipantToken(
                 roomName,
@@ -156,6 +161,7 @@ public class ClientMeetingService {
             meeting.setEndedAt(now);
             meeting.setUpdatedAt(now);
             meetingRepository.save(meeting);
+            liveKitEgressService.stopIfActive(meeting);
             liveKitRoomService.deleteRoom(liveKitRoomName(meeting));
         }
     }

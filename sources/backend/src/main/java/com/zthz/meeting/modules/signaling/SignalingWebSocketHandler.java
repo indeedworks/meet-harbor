@@ -1,6 +1,7 @@
 package com.zthz.meeting.modules.signaling;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zthz.meeting.modules.client.ClientMeetingRuntimeService;
 import com.zthz.meeting.modules.client.MeetingLifecycleService;
 import java.io.IOException;
 import java.net.URI;
@@ -30,16 +31,19 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
     private final JwtDecoder jwtDecoder;
     private final ObjectMapper objectMapper;
     private final MeetingLifecycleService meetingLifecycleService;
+    private final ClientMeetingRuntimeService clientMeetingRuntimeService;
     private final Map<String, Set<WebSocketSession>> rooms = new ConcurrentHashMap<>();
 
     public SignalingWebSocketHandler(
             JwtDecoder jwtDecoder,
             ObjectMapper objectMapper,
-            MeetingLifecycleService meetingLifecycleService
+            MeetingLifecycleService meetingLifecycleService,
+            ClientMeetingRuntimeService clientMeetingRuntimeService
     ) {
         this.jwtDecoder = jwtDecoder;
         this.objectMapper = objectMapper;
         this.meetingLifecycleService = meetingLifecycleService;
+        this.clientMeetingRuntimeService = clientMeetingRuntimeService;
     }
 
     @Override
@@ -55,6 +59,11 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
         session.getAttributes().put(ATTR_ACCOUNT, jwt.getSubject());
         session.getAttributes().put(ATTR_NICKNAME, jwt.getClaimAsString("nickname"));
         rooms.computeIfAbsent(query.meetingNo(), ignored -> ConcurrentHashMap.newKeySet()).add(session);
+        clientMeetingRuntimeService.participantJoined(
+                jwt.getSubject(),
+                jwt.getClaimAsString("nickname"),
+                query.meetingNo()
+        );
 
         send(session, Map.of(
                 "type", "server.connected",
@@ -104,6 +113,10 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
                 rooms.remove(meetingNo);
             }
         }
+        String account = (String) session.getAttributes().get(ATTR_ACCOUNT);
+        if (!hasOpenSession(meetingNo, account)) {
+            clientMeetingRuntimeService.participantLeft(account, meetingNo);
+        }
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("type", "server.member_left");
         event.put("meetingNo", meetingNo);
@@ -115,6 +128,13 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
                 (String) session.getAttributes().get(ATTR_ACCOUNT),
                 "NETWORK_DISCONNECT",
                 OffsetDateTime.now()
+        );
+    }
+
+    private boolean hasOpenSession(String meetingNo, String account) {
+        Set<WebSocketSession> sessions = rooms.get(meetingNo);
+        return sessions != null && sessions.stream().anyMatch(candidate ->
+                candidate.isOpen() && account.equals(candidate.getAttributes().get(ATTR_ACCOUNT))
         );
     }
 

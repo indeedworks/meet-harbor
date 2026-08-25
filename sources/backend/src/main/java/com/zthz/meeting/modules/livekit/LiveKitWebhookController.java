@@ -26,17 +26,20 @@ public class LiveKitWebhookController {
     private final LiveKitTokenService liveKitTokenService;
     private final MeetingRepository meetingRepository;
     private final MeetingLifecycleService meetingLifecycleService;
+    private final LiveKitEgressService liveKitEgressService;
     private final ObjectMapper objectMapper;
 
     public LiveKitWebhookController(
             LiveKitTokenService liveKitTokenService,
             MeetingRepository meetingRepository,
             MeetingLifecycleService meetingLifecycleService,
+            LiveKitEgressService liveKitEgressService,
             ObjectMapper objectMapper
     ) {
         this.liveKitTokenService = liveKitTokenService;
         this.meetingRepository = meetingRepository;
         this.meetingLifecycleService = meetingLifecycleService;
+        this.liveKitEgressService = liveKitEgressService;
         this.objectMapper = objectMapper;
     }
 
@@ -51,6 +54,7 @@ public class LiveKitWebhookController {
     ) throws Exception {
         liveKitTokenService.verifyWebhook(authorization, rawBody);
         JsonNode event = objectMapper.readTree(rawBody);
+        liveKitEgressService.applyWebhook(event);
         applyEvent(event);
         return ApiResponse.ok();
     }

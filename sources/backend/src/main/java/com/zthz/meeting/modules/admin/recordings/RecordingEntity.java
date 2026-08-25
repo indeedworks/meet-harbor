@@ -36,6 +36,9 @@ public class RecordingEntity {
     @Column(nullable = false, length = 32)
     private String status;
 
+    @Column(name = "egress_id", unique = true, length = 64)
+    private String egressId;
+
     @Column(name = "file_path", length = 512)
     private String filePath;
 
@@ -100,6 +103,18 @@ public class RecordingEntity {
         this.status = status;
     }
 
+    public String getEgressId() {
+        return egressId;
+    }
+
+    public void setEgressId(String egressId) {
+        this.egressId = egressId;
+    }
+
+    public String getFilePath() {
+        return filePath;
+    }
+
     public void setFilePath(String filePath) {
         this.filePath = filePath;
     }
@@ -122,6 +137,14 @@ public class RecordingEntity {
 
     public void setDurationSeconds(Integer durationSeconds) {
         this.durationSeconds = durationSeconds;
+    }
+
+    public Integer getDurationSeconds() {
+        return durationSeconds;
+    }
+
+    public OffsetDateTime getStartedAt() {
+        return startedAt;
     }
 
     public OffsetDateTime getCreatedAt() {
@@ -164,4 +187,3 @@ public class RecordingEntity {
         this.updatedAt = updatedAt;
     }
 }
-

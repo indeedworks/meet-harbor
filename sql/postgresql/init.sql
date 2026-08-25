@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS recordings (
     started_by BIGINT NOT NULL REFERENCES users(id),
     stopped_by BIGINT REFERENCES users(id),
     status VARCHAR(32) NOT NULL,
+    egress_id VARCHAR(64) UNIQUE,
     file_path VARCHAR(512),
     file_name VARCHAR(255),
     file_size_bytes BIGINT NOT NULL DEFAULT 0,
@@ -107,6 +108,9 @@ CREATE TABLE IF NOT EXISTS recordings (
     CONSTRAINT chk_recordings_file_size CHECK (file_size_bytes >= 0),
     CONSTRAINT chk_recordings_duration CHECK (duration_seconds >= 0)
 );
+
+ALTER TABLE recordings ADD COLUMN IF NOT EXISTS egress_id VARCHAR(64);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_recordings_egress_id ON recordings(egress_id) WHERE egress_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS recording_download_logs (
     id BIGSERIAL PRIMARY KEY,

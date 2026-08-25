@@ -803,6 +803,10 @@ struct ModernRecordingsView: View {
                         Text(recording.status)
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        Button("下载") {
+                            Task { await appState.downloadRecording(recording) }
+                        }
+                        .disabled(recording.status != "COMPLETED")
                     }
                     .padding(.vertical, 7)
                 }
