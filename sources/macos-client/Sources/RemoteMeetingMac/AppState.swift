@@ -16,10 +16,12 @@ final class AppState: ObservableObject {
     @Published private(set) var runtime: MeetingRuntimeState?
     @Published private(set) var history: [MeetingHistoryItem] = []
     @Published private(set) var recordings: [ClientRecording] = []
+    @Published private(set) var meetingParticipants: [ParticipantRuntimeState] = []
     @Published var isBusy = false
     @Published var errorMessage: String?
     @Published var isMuted = false
     @Published var isScreenSharing = false
+    @Published private(set) var screenShareSources: [LiveKitAdapter.ScreenShareSourceChoice] = []
 
     let signalingClient = SignalingClient()
     let liveKitAdapter = LiveKitAdapter()
@@ -38,6 +40,16 @@ final class AppState: ObservableObject {
                 Task { @MainActor in
                     await self.handleSignalingEvent(event)
                 }
+            }
+            .store(in: &cancellables)
+        $runtime
+            .combineLatest(liveKitAdapter.$participantNames, liveKitAdapter.$state)
+            .sink { [weak self] runtime, participantNames, liveKitState in
+                self?.rebuildMeetingParticipants(
+                    runtime: runtime,
+                    participantNames: participantNames,
+                    liveKitState: liveKitState
+                )
             }
             .store(in: &cancellables)
     }
@@ -144,25 +156,46 @@ final class AppState: ObservableObject {
             signalingClient.send(type: "client.mute_changed", payload: ["muted": String(nextValue)])
         }
     }
-    func startScreenShare() async {
-        guard let meetingNo = currentMeeting?.meetingNo else { return }
+    func loadScreenShareSources() async -> Bool {
         if !PermissionService.hasScreenRecordingPermission() {
             _ = PermissionService.requestScreenRecordingPermission()
             guard PermissionService.hasScreenRecordingPermission() else {
                 errorMessage = "屏幕录制权限尚未生效。如果系统设置里已经显示已授权，请完全退出远程会议后重新打开。"
-                return
+                return false
             }
         }
+        do {
+            screenShareSources = try await liveKitAdapter.screenShareSources()
+            if screenShareSources.isEmpty {
+                errorMessage = "没有找到可共享的显示器或应用窗口"
+                return false
+            }
+            return true
+        } catch {
+            errorMessage = "无法读取共享内容：\(error.localizedDescription)"
+            return false
+        }
+    }
+
+    func startScreenShare(source: LiveKitAdapter.ScreenShareSourceChoice) async {
+        guard let meetingNo = currentMeeting?.meetingNo else { return }
         await runBusy {
-            try await liveKitAdapter.startScreenShare(scope: "SCREEN", sourceName: "内建显示器")
-            let response = try await apiClient.startScreenShare(meetingNo: meetingNo, scope: "SCREEN", sourceName: "内建显示器")
+            try await liveKitAdapter.startScreenShare(source: source)
+            let response = try await apiClient.startScreenShare(meetingNo: meetingNo, scope: source.scope, sourceName: source.name)
             runtime = response.runtime
             isScreenSharing = true
-            signalingClient.send(type: "client.screen_share_started", payload: ["scope": "SCREEN"])
+            signalingClient.send(type: "client.screen_share_started", payload: ["scope": source.scope])
             if let replacedAccount = response.replacedAccount {
                 errorMessage = "已替换 \(replacedAccount) 的屏幕共享"
             }
         }
+    }
+
+    func startScreenShare() async {
+        guard await loadScreenShareSources(),
+              let display = screenShareSources.first(where: { $0.scope == "SCREEN" }) ?? screenShareSources.first
+        else { return }
+        await startScreenShare(source: display)
     }
 
     func stopScreenShare() async {
@@ -236,6 +269,30 @@ final class AppState: ObservableObject {
             await liveKitAdapter.refreshRemoteScreenShareRepeatedly()
         default:
             break
+        }
+    }
+
+    private func rebuildMeetingParticipants(
+        runtime: MeetingRuntimeState?,
+        participantNames: [String: String],
+        liveKitState: LiveKitAdapter.ConnectionState
+    ) {
+        if liveKitState == .connected {
+            meetingParticipants = participantNames.map { account, nickname in
+                runtime?.participants[account] ?? ParticipantRuntimeState(
+                    account: account,
+                    nickname: nickname,
+                    muted: false,
+                    networkQuality: "良好",
+                    latencyMs: nil,
+                    packetLossPercent: nil,
+                    audioBitrateKbps: nil,
+                    screenShareBitrateKbps: nil,
+                    updatedAt: Date()
+                )
+            }.sorted { $0.nickname < $1.nickname }
+        } else {
+            meetingParticipants = runtime?.participants.values.sorted { $0.nickname < $1.nickname } ?? []
         }
     }
 

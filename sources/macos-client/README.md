@@ -49,6 +49,8 @@ bash package-app.sh
 open dist/RemoteMeetingMac.app
 ```
 
+打包脚本会先修补 LiveKit 2.15.1 的 macOS 共享源枚举，使位于其他桌面空间或全屏空间的 Chrome 等窗口也能被列出并纳入整屏共享。
+
 Development deployments may use a raw IP over HTTP/WS, so the bundled
 `Info.plist` temporarily permits insecure transport. Production deployments
 should use HTTPS/WSS and remove `NSAllowsArbitraryLoads`.

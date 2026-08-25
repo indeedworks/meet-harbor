@@ -4,6 +4,20 @@ import OSLog
 
 @MainActor
 final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
+    final class ScreenShareSourceChoice: Identifiable {
+        let id: String
+        let name: String
+        let scope: String
+        fileprivate let source: MacOSScreenCaptureSource
+
+        fileprivate init(id: String, name: String, scope: String, source: MacOSScreenCaptureSource) {
+            self.id = id
+            self.name = name
+            self.scope = scope
+            self.source = source
+        }
+    }
+
     enum ConnectionState: String {
         case disconnected = "未连接"
         case connecting = "连接中"
@@ -15,6 +29,7 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
     @Published private(set) var lastError: String?
     @Published private(set) var remoteScreenShareTrack: VideoTrack?
     @Published private(set) var remoteScreenShareOwner: String?
+    @Published private(set) var participantNames: [String: String] = [:]
 
     private var room: Room?
     private var remoteScreenSharePollingTask: Task<Void, Never>?
@@ -39,19 +54,16 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
                 roomOptions: RoomOptions(
                     defaultScreenShareCaptureOptions: ScreenShareCaptureOptions(
                         dimensions: .h1080_169,
-                        fps: 15,
+                        fps: 30,
                         showCursor: true
                     ),
                     defaultVideoPublishOptions: VideoPublishOptions(
-                        screenShareEncoding: VideoEncoding(maxBitrate: 5_000_000, maxFps: 15),
-                        simulcast: true,
-                        screenShareSimulcastLayers: [
-                            .presetScreenShareH360FPS3,
-                            .presetScreenShareH720FPS5
-                        ],
-                        degradationPreference: .maintainResolution
+                        screenShareEncoding: VideoEncoding(maxBitrate: 5_000_000, maxFps: 30),
+                        simulcast: false,
+                        screenShareSimulcastLayers: [],
+                        degradationPreference: .balanced
                     ),
-                    dynacast: true,
+                    dynacast: false,
                     stopLocalTrackOnUnpublish: true,
                     reportRemoteTrackStatistics: true
                 )
@@ -70,6 +82,7 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
                 throw LiveKitAdapterError.connectionLost
             }
             state = .connected
+            updateParticipantNames(from: room)
             startRemoteScreenSharePolling()
             await refreshRemoteScreenShareRepeatedly()
         } catch {
@@ -95,6 +108,7 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
         remoteScreenShareTrack = nil
         remoteScreenShareOwner = nil
         remoteScreenSharePublicationSid = nil
+        participantNames = [:]
         highQualityScreenShareSids.removeAll()
     }
 
@@ -103,12 +117,53 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
         try await room.localParticipant.setMicrophone(enabled: !muted)
     }
 
-    func startScreenShare(scope: String, sourceName: String) async throws {
+    func screenShareSources() async throws -> [ScreenShareSourceChoice] {
+        let sources = try await MacOSScreenCapturer.sources(for: .any)
+        var displayIndex = 0
+        return sources.compactMap { source in
+            if let display = source as? MacOSDisplay {
+                displayIndex += 1
+                return ScreenShareSourceChoice(
+                    id: "display-\(display.displayID)",
+                    name: "显示器 \(displayIndex)（\(display.width) × \(display.height)）",
+                    scope: "SCREEN",
+                    source: display
+                )
+            }
+            if let window = source as? MacOSWindow {
+                let applicationName = window.owningApplication?.applicationName ?? "应用窗口"
+                let windowTitle = window.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let name = windowTitle?.isEmpty == false ? "\(applicationName) — \(windowTitle!)" : applicationName
+                return ScreenShareSourceChoice(
+                    id: "window-\(window.windowID)",
+                    name: name,
+                    scope: "WINDOW",
+                    source: window
+                )
+            }
+            return nil
+        }
+    }
+
+    func startScreenShare(source choice: ScreenShareSourceChoice) async throws {
         let room = try connectedRoom()
         guard !isStoppingLocalScreenShare else {
             throw LiveKitAdapterError.screenShareTransitionInProgress
         }
-        try await room.localParticipant.setScreenShare(enabled: true)
+        let track = LocalVideoTrack.createMacOSScreenShareTrack(
+            source: choice.source,
+            options: ScreenShareCaptureOptions(dimensions: .h1080_169, fps: 30, showCursor: true),
+            reportStatistics: true
+        )
+        try await room.localParticipant.publish(
+            videoTrack: track,
+            options: VideoPublishOptions(
+                screenShareEncoding: VideoEncoding(maxBitrate: 5_000_000, maxFps: 30),
+                simulcast: false,
+                screenShareSimulcastLayers: [],
+                degradationPreference: .balanced
+            )
+        )
     }
 
     func stopScreenShare() async throws {
@@ -167,6 +222,7 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
         }
         Task { @MainActor in
             self.logger.info("Remote screen share published by \(participantDisplayName(participant), privacy: .public)")
+            await self.preferHighQuality(for: publication)
             self.updateRemoteScreenShare(from: room, preferredParticipant: participant)
             if self.remoteScreenShareTrack == nil {
                 await self.refreshRemoteScreenShareRepeatedly()
@@ -214,9 +270,22 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
 
     nonisolated func room(_ room: Room, participantDidDisconnect participant: RemoteParticipant) {
         Task { @MainActor in
+            self.updateParticipantNames(from: room)
             if self.remoteScreenShareOwner == participantDisplayName(participant) {
                 self.updateRemoteScreenShare(from: room)
             }
+        }
+    }
+
+    nonisolated func room(_ room: Room, participantDidConnect participant: RemoteParticipant) {
+        Task { @MainActor in
+            self.updateParticipantNames(from: room)
+        }
+    }
+
+    nonisolated func room(_ room: Room, participant: Participant, didUpdateName name: String) {
+        Task { @MainActor in
+            self.updateParticipantNames(from: room)
         }
     }
 
@@ -230,6 +299,7 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
             case .connected:
                 self.state = .connected
                 self.lastError = nil
+                self.updateParticipantNames(from: room)
             case .connecting, .reconnecting:
                 self.state = .connecting
             case .disconnected, .disconnecting:
@@ -237,6 +307,7 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
                 self.remoteScreenShareTrack = nil
                 self.remoteScreenShareOwner = nil
                 self.remoteScreenSharePublicationSid = nil
+                self.participantNames = [:]
             @unknown default:
                 self.state = .disconnected
             }
@@ -273,6 +344,18 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
         remoteScreenShareTrack = nil
         remoteScreenShareOwner = nil
         remoteScreenSharePublicationSid = nil
+    }
+
+    private func updateParticipantNames(from room: Room) {
+        var names: [String: String] = [:]
+        if let identity = room.localParticipant.identity?.stringValue {
+            names[identity] = room.localParticipant.name ?? identity
+        }
+        for participant in room.remoteParticipants.values {
+            guard let identity = participant.identity?.stringValue else { continue }
+            names[identity] = participant.name ?? identity
+        }
+        participantNames = names
     }
 
     private func screenShareVideoTrack(

@@ -5,13 +5,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${ROOT_DIR}"
 
+swift package resolve
+bash "${ROOT_DIR}/patch-livekit-sdk.sh"
 swift build
 swift build --triple x86_64-apple-macosx14.0
 
 ARM_BIN_DIR="$(swift build --show-bin-path)"
 X64_BIN_DIR="$(swift build --triple x86_64-apple-macosx14.0 --show-bin-path)"
 APP_NAME="RemoteMeetingMac"
-APP_VERSION="0.1.2"
+APP_VERSION="0.1.6"
 APP_DIR="${ROOT_DIR}/dist/${APP_NAME}.app"
 DMG_PATH="${ROOT_DIR}/dist/${APP_NAME}-${APP_VERSION}-universal.dmg"
 CONTENTS_DIR="${APP_DIR}/Contents"

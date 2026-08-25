@@ -446,7 +446,7 @@ private struct MeetingTopBar: View {
             Button {
                 showingMembers.toggle()
             } label: {
-                Label("成员 (\(appState.runtime?.participants.count ?? 0))", systemImage: "person.2")
+                Label("成员 (\(appState.meetingParticipants.count))", systemImage: "person.2")
             }
             .buttonStyle(.plain)
             .help("查看参会成员")
@@ -542,7 +542,7 @@ private struct ParticipantStage: View {
     let meeting: MeetingDetail
 
     private var participants: [ParticipantRuntimeState] {
-        let values = appState.runtime?.participants.values.sorted { $0.nickname < $1.nickname } ?? []
+        let values = appState.meetingParticipants
         if values.isEmpty, let user = appState.currentUser {
             return [ParticipantRuntimeState(
                 account: user.account,
@@ -625,7 +625,7 @@ private struct MemberPanel: View {
     @EnvironmentObject private var appState: AppState
 
     private var participants: [ParticipantRuntimeState] {
-        appState.runtime?.participants.values.sorted { $0.nickname < $1.nickname } ?? []
+        appState.meetingParticipants
     }
 
     var body: some View {
@@ -668,6 +668,7 @@ private struct MeetingControlBar: View {
     @EnvironmentObject private var appState: AppState
     let meeting: MeetingDetail
     @Binding var showingMembers: Bool
+    @State private var showingScreenShareSources = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -685,7 +686,11 @@ private struct MeetingControlBar: View {
                 activeColor: appState.isScreenSharing ? .green : .primary
             ) {
                 Task {
-                    appState.isScreenSharing ? await appState.stopScreenShare() : await appState.startScreenShare()
+                    if appState.isScreenSharing {
+                        await appState.stopScreenShare()
+                    } else if await appState.loadScreenShareSources() {
+                        showingScreenShareSources = true
+                    }
                 }
             }
             MeetingControlButton(title: "复制会议号", icon: "doc.on.doc", activeColor: .primary) {
@@ -713,8 +718,44 @@ private struct MeetingControlBar: View {
         .frame(height: 84)
         .background(Color.white)
         .overlay(alignment: .top) { Divider() }
+        .sheet(isPresented: $showingScreenShareSources) {
+            ScreenShareSourcePicker(isPresented: $showingScreenShareSources)
+                .environmentObject(appState)
+        }
     }
 
+}
+
+private struct ScreenShareSourcePicker: View {
+    @EnvironmentObject private var appState: AppState
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("选择共享内容")
+                .font(.title2.weight(.semibold))
+            Text("可以共享整块显示器，也可以只共享 Chrome 等应用窗口。")
+                .foregroundStyle(.secondary)
+            List(appState.screenShareSources) { source in
+                Button {
+                    isPresented = false
+                    Task { await appState.startScreenShare(source: source) }
+                } label: {
+                    Label(source.name, systemImage: source.scope == "WINDOW" ? "macwindow" : "display")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            HStack {
+                Spacer()
+                Button("取消") { isPresented = false }
+                    .keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 560, height: 460)
+    }
 }
 
 private func copyMeetingNoToPasteboard(_ meetingNo: String) {
