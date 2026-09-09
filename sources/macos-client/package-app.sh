@@ -13,7 +13,7 @@ swift build --triple x86_64-apple-macosx14.0
 ARM_BIN_DIR="$(swift build --show-bin-path)"
 X64_BIN_DIR="$(swift build --triple x86_64-apple-macosx14.0 --show-bin-path)"
 APP_NAME="RemoteMeetingMac"
-APP_VERSION="0.1.6"
+APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${ROOT_DIR}/Info.plist")"
 APP_DIR="${ROOT_DIR}/dist/${APP_NAME}.app"
 DMG_PATH="${ROOT_DIR}/dist/${APP_NAME}-${APP_VERSION}-universal.dmg"
 CONTENTS_DIR="${APP_DIR}/Contents"
@@ -49,6 +49,18 @@ done
 
 cp "${ROOT_DIR}/Info.plist" "${CONTENTS_DIR}/Info.plist"
 
+# Generate all standard and Retina icon sizes from the approved master artwork.
+ICONSET_DIR="$(mktemp -d "${ROOT_DIR}/dist/AppIcon.XXXXXX")/AppIcon.iconset"
+trap 'rm -rf "$(dirname "${ICONSET_DIR}")"' EXIT
+mkdir -p "${ICONSET_DIR}"
+for size in 16 32 128 256 512; do
+  sips -z "${size}" "${size}" "${ROOT_DIR}/Resources/AppIcon.png" \
+    --out "${ICONSET_DIR}/icon_${size}x${size}.png" >/dev/null
+  sips -z "$((size * 2))" "$((size * 2))" "${ROOT_DIR}/Resources/AppIcon.png" \
+    --out "${ICONSET_DIR}/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "${ICONSET_DIR}" -o "${RESOURCES_DIR}/AppIcon.icns"
+
 ENTITLEMENTS_FILE="${ROOT_DIR}/dist/RemoteMeetingMac.entitlements.plist"
 cat > "${ENTITLEMENTS_FILE}" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -73,12 +85,37 @@ lipo -archs "${MACOS_DIR}/${APP_NAME}"
 echo "Code signing identity: ${SIGN_IDENTITY}"
 
 if command -v hdiutil >/dev/null 2>&1; then
-  rm -f "${DMG_PATH}"
+  DMG_WORK_DIR="$(mktemp -d "${ROOT_DIR}/dist/Installer.XXXXXX")"
+  DMG_MOUNT_DIR="${DMG_WORK_DIR}/mount"
+  cleanup_installer() {
+    if mount | grep -Fq " on ${DMG_MOUNT_DIR} "; then
+      hdiutil detach "${DMG_MOUNT_DIR}" >/dev/null || true
+    fi
+    rm -rf "${DMG_WORK_DIR}" "$(dirname "${ICONSET_DIR}")"
+  }
+  trap cleanup_installer EXIT
+  mkdir -p "${DMG_WORK_DIR}/stage" "${DMG_MOUNT_DIR}"
+  ditto "${APP_DIR}" "${DMG_WORK_DIR}/stage/MeetHarbor.app"
+  ln -s /Applications "${DMG_WORK_DIR}/stage/Applications"
+  cat > "${DMG_WORK_DIR}/stage/安装说明.txt" <<'TEXT'
+安装 MeetHarbor
+
+将 MeetHarbor 图标拖到右侧的 Applications（应用程序）文件夹，即可安装。
+安装完成后，请从“应用程序”打开 MeetHarbor，并推出此安装磁盘。
+TEXT
   hdiutil create \
-    -volname "${APP_NAME}-Universal-${APP_VERSION}" \
-    -srcfolder "${APP_DIR}" \
+    -volname "MeetHarbor ${APP_VERSION}" \
+    -srcfolder "${DMG_WORK_DIR}/stage" \
     -ov \
-    -format UDZO \
-    "${DMG_PATH}" >/dev/null
+    -format UDRW \
+    "${DMG_WORK_DIR}/installer.dmg" >/dev/null
+  hdiutil attach "${DMG_WORK_DIR}/installer.dmg" \
+    -mountpoint "${DMG_MOUNT_DIR}" -nobrowse >/dev/null
+  cp "${ROOT_DIR}/Resources/Installer.DS_Store" "${DMG_MOUNT_DIR}/.DS_Store"
+  sync
+  hdiutil detach "${DMG_MOUNT_DIR}" >/dev/null
+  hdiutil convert "${DMG_WORK_DIR}/installer.dmg" -format UDZO \
+    -o "${DMG_WORK_DIR}/final.dmg" >/dev/null
+  mv -f "${DMG_WORK_DIR}/final.dmg" "${DMG_PATH}"
   echo "Built DMG: ${DMG_PATH}"
 fi

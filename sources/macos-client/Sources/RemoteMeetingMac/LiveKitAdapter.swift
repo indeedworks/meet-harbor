@@ -31,6 +31,8 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
     @Published private(set) var remoteScreenShareOwner: String?
     @Published private(set) var participantNames: [String: String] = [:]
 
+    @Published private(set) var isLocalScreenSharing = false
+    private var screenShareGeneration = 0
     private var room: Room?
     private var remoteScreenSharePollingTask: Task<Void, Never>?
     private var remoteScreenSharePublicationSid: Track.Sid?
@@ -103,6 +105,8 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
         Task {
             await room?.disconnect()
         }
+        screenShareGeneration += 1
+        isLocalScreenSharing = false
         state = .disconnected
         roomName = nil
         remoteScreenShareTrack = nil
@@ -150,12 +154,13 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
         guard !isStoppingLocalScreenShare else {
             throw LiveKitAdapterError.screenShareTransitionInProgress
         }
+        let generation = screenShareGeneration
         let track = LocalVideoTrack.createMacOSScreenShareTrack(
             source: choice.source,
             options: ScreenShareCaptureOptions(dimensions: .h1080_169, fps: 30, showCursor: true),
             reportStatistics: true
         )
-        try await room.localParticipant.publish(
+        let publication = try await room.localParticipant.publish(
             videoTrack: track,
             options: VideoPublishOptions(
                 screenShareEncoding: VideoEncoding(maxBitrate: 5_000_000, maxFps: 30),
@@ -164,24 +169,25 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
                 degradationPreference: .balanced
             )
         )
+        guard self.room === room, room.connectionState == .connected,
+              generation == screenShareGeneration else {
+            try? await track.stop()
+            try? await room.localParticipant.unpublish(publication: publication)
+            throw LiveKitAdapterError.connectionLost
+        }
+        isLocalScreenSharing = true
     }
 
     func stopScreenShare() async throws {
-        guard let room else {
-            return
-        }
-        guard room.connectionState == .connected else {
-            return
-        }
+        screenShareGeneration += 1
+        isLocalScreenSharing = false
+        guard let room else { return }
         guard !isStoppingLocalScreenShare else {
-            return
-        }
-        guard room.localParticipant.firstScreenSharePublication != nil else {
             return
         }
         isStoppingLocalScreenShare = true
         defer { isStoppingLocalScreenShare = false }
-        try await room.localParticipant.setScreenShare(enabled: false)
+        try await room.localParticipant.stopScreenShareBeforeReconnect()
     }
 
     func refreshRemoteScreenShare() async {
@@ -295,6 +301,11 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
         from oldConnectionState: LiveKit.ConnectionState
     ) {
         Task { @MainActor in
+            guard self.room === room else { return }
+            if connectionState != .connected {
+                self.screenShareGeneration += 1
+                self.isLocalScreenSharing = false
+            }
             switch connectionState {
             case .connected:
                 self.state = .connected
@@ -316,6 +327,9 @@ final class LiveKitAdapter: NSObject, ObservableObject, RoomDelegate {
 
     nonisolated func room(_ room: Room, didDisconnectWithError error: LiveKitError?) {
         Task { @MainActor in
+            guard self.room === room else { return }
+            self.screenShareGeneration += 1
+            self.isLocalScreenSharing = false
             self.state = .disconnected
             self.lastError = error == nil ? nil : LiveKitAdapterError.connectionLost.localizedDescription
         }

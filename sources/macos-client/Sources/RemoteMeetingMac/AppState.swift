@@ -27,6 +27,10 @@ final class AppState: ObservableObject {
     let liveKitAdapter = LiveKitAdapter()
 
     private let apiClient: APIClient
+    private let deviceStateStore = MeetingDeviceStateStore()
+    private var deviceStateContext: MeetingDeviceStateStore.Context?
+    private var needsDeviceStateSync = false
+    private var isSyncingDeviceState = false
     private var cancellables = Set<AnyCancellable>()
 
     init() {
@@ -39,6 +43,24 @@ final class AppState: ObservableObject {
                 guard let self else { return }
                 Task { @MainActor in
                     await self.handleSignalingEvent(event)
+                }
+            }
+            .store(in: &cancellables)
+        liveKitAdapter.$isLocalScreenSharing
+            .sink { [weak self] sharing in
+                self?.isScreenSharing = sharing
+                if !sharing { self?.screenShareSources = [] }
+            }
+            .store(in: &cancellables)
+        liveKitAdapter.$state
+            .removeDuplicates()
+            .sink { [weak self] state in
+                guard let self, self.currentMeeting != nil else { return }
+                self.needsDeviceStateSync = true
+                if state == .connected {
+                    Task { @MainActor in
+                        await self.restoreMeetingSignalingAndDeviceState()
+                    }
                 }
             }
             .store(in: &cancellables)
@@ -69,6 +91,8 @@ final class AppState: ObservableObject {
     }
 
     func logout() {
+        deviceStateContext = nil
+        isMuted = false
         KeychainStore.deleteAccessToken()
         apiClient.accessToken = nil
         currentUser = nil
@@ -117,11 +141,15 @@ final class AppState: ObservableObject {
     }
 
     func reconnectCurrentMeeting() async {
+        guard !isBusy else { return }
         guard let clientSessionId = currentMeeting?.clientSessionId else {
             errorMessage = "当前没有可重连的会议会话"
             return
         }
         await runBusy {
+            // Revoke sharing before any network request, including a failed reconnect.
+            try await liveKitAdapter.stopScreenShare()
+            needsDeviceStateSync = true
             signalingClient.send(type: "client.reconnecting", payload: [:])
             try? await Task.sleep(nanoseconds: 250_000_000)
             let response = try await apiClient.reconnectMeeting(clientSessionId: clientSessionId)
@@ -140,6 +168,7 @@ final class AppState: ObservableObject {
             liveKitAdapter.disconnect()
             currentMeeting = nil
             runtime = nil
+            deviceStateContext = nil
             isMuted = false
             isScreenSharing = false
             await refreshLists()
@@ -147,12 +176,17 @@ final class AppState: ObservableObject {
     }
 
     func toggleMute() async {
-        guard let meetingNo = currentMeeting?.meetingNo else { return }
+        guard !isBusy, !isSyncingDeviceState,
+              let meetingNo = currentMeeting?.meetingNo else { return }
         let nextValue = !isMuted
         await runBusy {
             try await liveKitAdapter.setMicrophoneMuted(nextValue)
-            runtime = try await apiClient.updateMute(meetingNo: meetingNo, muted: nextValue)
             isMuted = nextValue
+            needsDeviceStateSync = true
+            if let context = deviceStateContext {
+                try deviceStateStore.save(isMuted: nextValue, for: context)
+            }
+            runtime = try await apiClient.updateMute(meetingNo: meetingNo, muted: nextValue)
             signalingClient.send(type: "client.mute_changed", payload: ["muted": String(nextValue)])
         }
     }
@@ -178,12 +212,23 @@ final class AppState: ObservableObject {
     }
 
     func startScreenShare(source: LiveKitAdapter.ScreenShareSourceChoice) async {
-        guard let meetingNo = currentMeeting?.meetingNo else { return }
+        guard !isBusy, !isSyncingDeviceState,
+              let meetingNo = currentMeeting?.meetingNo else { return }
         await runBusy {
             try await liveKitAdapter.startScreenShare(source: source)
-            let response = try await apiClient.startScreenShare(meetingNo: meetingNo, scope: source.scope, sourceName: source.name)
+            let response: ScreenShareResponse
+            do {
+                response = try await apiClient.startScreenShare(meetingNo: meetingNo, scope: source.scope, sourceName: source.name)
+            } catch {
+                try? await liveKitAdapter.stopScreenShare()
+                needsDeviceStateSync = true
+                throw error
+            }
+            guard liveKitAdapter.isLocalScreenSharing else {
+                needsDeviceStateSync = true
+                return
+            }
             runtime = response.runtime
-            isScreenSharing = true
             signalingClient.send(type: "client.screen_share_started", payload: ["scope": source.scope])
             if let replacedAccount = response.replacedAccount {
                 errorMessage = "已替换 \(replacedAccount) 的屏幕共享"
@@ -202,6 +247,7 @@ final class AppState: ObservableObject {
         guard let meetingNo = currentMeeting?.meetingNo else { return }
         await runBusy {
             try await liveKitAdapter.stopScreenShare()
+            needsDeviceStateSync = true
             runtime = try await apiClient.stopScreenShare(meetingNo: meetingNo)
             isScreenSharing = false
             signalingClient.send(type: "client.screen_share_stopped", payload: [:])
@@ -234,6 +280,7 @@ final class AppState: ObservableObject {
 
     func refreshRuntime() async {
         guard let meetingNo = currentMeeting?.meetingNo else { return }
+        await restoreMeetingSignalingAndDeviceState()
         do {
             runtime = try await apiClient.runtime(meetingNo: meetingNo)
         } catch {
@@ -241,7 +288,52 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func restoreMeetingSignalingAndDeviceState() async {
+        guard liveKitAdapter.state == .connected,
+              let meetingNo = currentMeeting?.meetingNo else { return }
+        if !signalingClient.isConnected, let token = apiClient.accessToken {
+            signalingClient.connect(baseURLString: baseURLString, token: token, meetingNo: meetingNo)
+        }
+        await syncDeviceStateIfNeeded()
+    }
+
+    private func syncDeviceStateIfNeeded() async {
+        guard needsDeviceStateSync, !isSyncingDeviceState, !isBusy,
+              liveKitAdapter.state == .connected,
+              let meeting = currentMeeting else { return }
+        isSyncingDeviceState = true
+        needsDeviceStateSync = false
+        defer { isSyncingDeviceState = false }
+        do {
+            let muted = isMuted
+            _ = try await apiClient.updateMute(meetingNo: meeting.meetingNo, muted: muted)
+            guard currentMeeting?.clientSessionId == meeting.clientSessionId else { return }
+            if !isScreenSharing {
+                _ = try await apiClient.stopScreenShare(meetingNo: meeting.meetingNo)
+                signalingClient.send(type: "client.screen_share_stopped", payload: [:])
+            }
+            signalingClient.send(type: "client.mute_changed", payload: ["muted": String(muted)])
+        } catch {
+            // Retry on the next runtime refresh without changing local device intent.
+            needsDeviceStateSync = true
+        }
+    }
+
     private func enterMeeting(_ response: JoinMeetingResponse) async throws {
+        guard let account = MeetingDeviceStateStore.account(fromParticipantToken: response.liveKit.participantToken) else {
+            throw NSError(domain: "MeetingDeviceState", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "无法识别参会账号，请重新登录后入会"])
+        }
+        let context = MeetingDeviceStateStore.Context(server: baseURLString, account: account,
+                                                      meetingID: response.meeting.id)
+        // Resolve saved intent before any media connection can publish the microphone.
+        // A read failure aborts entry rather than accidentally opening a previously muted microphone.
+        let restoredMute = context == deviceStateContext
+            ? isMuted : try deviceStateStore.load(for: context)?.isMuted ?? false
+        try deviceStateStore.save(isMuted: restoredMute, for: context)
+        deviceStateContext = context
+        isMuted = restoredMute
+        needsDeviceStateSync = true
         currentMeeting = response.meeting
         runtime = try? await apiClient.runtime(meetingNo: response.meeting.meetingNo)
         if let token = apiClient.accessToken {
@@ -252,7 +344,10 @@ final class AppState: ObservableObject {
 
     private func handleSignalingEvent(_ event: SignalingEvent) async {
         switch event.type {
-        case "server.connected", "server.member_joined", "server.member_left":
+        case "server.connected":
+            needsDeviceStateSync = true
+            await refreshRuntime()
+        case "server.member_joined", "server.member_left":
             await refreshRuntime()
         case "client.screen_share_started":
             guard event.account != currentUser?.account else {

@@ -48,9 +48,10 @@ final class SignalingClient: ObservableObject {
     }
 
     private func receiveNext() {
-        task?.receive { [weak self] result in
+        guard let task else { return }
+        task.receive { [weak self, weak task] result in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, let task, self.task === task else { return }
                 switch result {
                 case .success(.string(let text)):
                     self.appendEvent(text)
