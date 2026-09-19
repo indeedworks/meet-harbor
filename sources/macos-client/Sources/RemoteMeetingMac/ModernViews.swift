@@ -884,6 +884,7 @@ private struct ModernListPage<Content: View>: View {
 private struct ClientSettingsView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
+    @State private var showingChangePassword = false
 
     var body: some View {
         DialogScaffold(title: "设置") {
@@ -895,12 +896,138 @@ private struct ClientSettingsView: View {
                     .textFieldStyle(.roundedBorder)
             }
             PermissionStatusView()
+            Divider()
+            Button {
+                showingChangePassword = true
+            } label: {
+                Label("修改密码", systemImage: "lock.rotation")
+            }
             HStack {
                 Spacer()
                 Button("完成") { dismiss() }
                     .buttonStyle(.borderedProminent)
             }
         }
+        .sheet(isPresented: $showingChangePassword) {
+            ChangePasswordView()
+                .environmentObject(appState)
+        }
+    }
+}
+
+private struct ChangePasswordView: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var oldPassword = ""
+    @State private var newPassword = ""
+    @State private var confirmPassword = ""
+    @State private var isSubmitting = false
+    @State private var errorMessage: String?
+    @State private var showingSuccess = false
+    @FocusState private var focusedField: Field?
+
+    private enum Field: Hashable {
+        case oldPassword, newPassword, confirmPassword
+    }
+
+    private var validationMessage: String? {
+        if oldPassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || newPassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || confirmPassword.isEmpty {
+            return "请填写原密码、新密码和确认密码"
+        }
+        if newPassword != confirmPassword {
+            return "两次输入的新密码不一致"
+        }
+        if oldPassword == newPassword {
+            return "新密码不能与原密码相同"
+        }
+        return nil
+    }
+
+    var body: some View {
+        DialogScaffold(title: "修改密码") {
+            VStack(alignment: .leading, spacing: 14) {
+                passwordField("原密码", text: $oldPassword, field: .oldPassword)
+                passwordField("新密码", text: $newPassword, field: .newPassword)
+                passwordField("确认新密码", text: $confirmPassword, field: .confirmPassword)
+            }
+            .disabled(isSubmitting || showingSuccess)
+
+            if let message = errorMessage ?? validationMessage {
+                Text(message)
+                    .font(.callout)
+                    .foregroundStyle(errorMessage == nil ? Color.secondary : Color.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack {
+                Button("取消") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(isSubmitting)
+                Spacer()
+                if isSubmitting {
+                    ProgressView().controlSize(.small)
+                }
+                Button(isSubmitting ? "提交中…" : "确认修改") {
+                    submit()
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(isSubmitting || showingSuccess || validationMessage != nil)
+            }
+        }
+        .interactiveDismissDisabled(isSubmitting)
+        .onAppear { focusedField = .oldPassword }
+        .onChange(of: oldPassword) { errorMessage = nil }
+        .onChange(of: newPassword) { errorMessage = nil }
+        .onChange(of: confirmPassword) { errorMessage = nil }
+        .onDisappear { clearPasswords() }
+        .alert("密码修改成功", isPresented: $showingSuccess) {
+            Button("完成") { dismiss() }
+        } message: {
+            Text("下次登录请使用新密码。")
+        }
+    }
+
+    private func passwordField(_ title: String, text: Binding<String>, field: Field) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            SecureField(title, text: text)
+                .textFieldStyle(.roundedBorder)
+                .focused($focusedField, equals: field)
+                .onSubmit {
+                    switch field {
+                    case .oldPassword: focusedField = .newPassword
+                    case .newPassword: focusedField = .confirmPassword
+                    case .confirmPassword: submit()
+                    }
+                }
+        }
+    }
+
+    private func submit() {
+        guard !isSubmitting, !showingSuccess, validationMessage == nil else { return }
+        isSubmitting = true
+        errorMessage = nil
+        Task { @MainActor in
+            defer { isSubmitting = false }
+            do {
+                try await appState.changePassword(oldPassword: oldPassword, newPassword: newPassword)
+                clearPasswords()
+                showingSuccess = true
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func clearPasswords() {
+        oldPassword = ""
+        newPassword = ""
+        confirmPassword = ""
     }
 }
 

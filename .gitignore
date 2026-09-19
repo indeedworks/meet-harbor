@@ -45,3 +45,4 @@ sources/macos-client/dist/
 # Local deployment data and backups
 docker/data/
 docker/backups/
+docker-offline/images/

@@ -6,6 +6,7 @@ services:
     # 兼容旧宿主内核/seccomp 与 Alpine 的组合；现代环境验证通过后可移除。
     security_opt:
       - seccomp=unconfined
+    pull_policy: never
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
@@ -14,7 +15,7 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../sql/postgresql/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+      - ./sql/postgresql/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
@@ -24,6 +25,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    pull_policy: never
     restart: unless-stopped
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -39,6 +41,7 @@ services:
 
   livekit:
     image: livekit/livekit-server:v1.12.0
+    pull_policy: never
     restart: unless-stopped
     depends_on:
       redis:
@@ -77,6 +80,7 @@ services:
 
   livekit-egress:
     image: livekit/egress:v1.9.0
+    pull_policy: never
     restart: unless-stopped
     cap_add:
       - SYS_ADMIN
@@ -100,9 +104,8 @@ services:
     networks: [meeting_net]
 
   backend:
-    image: ${PROJECT_NAME:-remote-meeting-stack}-backend:local
-    build:
-      context: ../sources/backend
+    image: ${BACKEND_IMAGE:-remote-meeting-stack-backend:local}
+    pull_policy: never
     restart: unless-stopped
     depends_on:
       postgres:
@@ -148,9 +151,8 @@ services:
     networks: [meeting_net]
 
   admin-web:
-    image: ${PROJECT_NAME:-remote-meeting-stack}-admin-web:local
-    build:
-      context: ../sources/admin-web
+    image: ${ADMIN_WEB_IMAGE:-remote-meeting-stack-admin-web:local}
+    pull_policy: never
     restart: unless-stopped
     depends_on:
       backend:

@@ -5,6 +5,7 @@ macOS SwiftUI client for the remote meeting system.
 Current scope:
 
 - Login and logout.
+- Change password from Settings, with current-password verification and new-password confirmation.
 - Create instant meeting.
 - Join meeting by meeting number and password.
 - Leave meeting.

@@ -90,6 +90,16 @@ final class AppState: ObservableObject {
         }
     }
 
+    func changePassword(oldPassword: String, newPassword: String) async throws {
+        do {
+            try await apiClient.changePassword(oldPassword: oldPassword, newPassword: newPassword)
+        } catch APIError.unauthorized {
+            logout()
+            errorMessage = "登录已失效，请重新登录"
+            throw APIError.unauthorized
+        }
+    }
+
     func logout() {
         deviceStateContext = nil
         isMuted = false
